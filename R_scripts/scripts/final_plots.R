@@ -1,4 +1,4 @@
-setwd("C:/Users/alex9/Documents/PhD/R_stuff/ddPCR_screening")
+setwd("R_scripts/scripts")
 rm(list = ls())
 
 library(corrplot)
@@ -22,7 +22,7 @@ all_data <- read_xlsx("ddPCR_biomon_mb_data.xlsx")
 
 all_data_na <- read_xlsx("ddPCR_biomon_mb_data_na.xlsx")
 gc_data <- read_xlsx("ddPCR_meta_GC.xlsx")
-temp <- read_xlsx("../Temp_time_MUC.xlsx")
+temp <- read_xlsx("../data/Temp_time_MUC.xlsx")
 
 
 # set datasets
