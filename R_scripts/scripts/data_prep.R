@@ -1,4 +1,4 @@
-setwd("C:/Users/alex9/Documents/PhD/R_stuff/ddPCR_screening")
+setwd("R_scripts/scripts/data_prep.R")
 rm(list = ls())
 
 
@@ -9,24 +9,24 @@ library(writexl)
 
 ### load data ###
 #load MUC data
-muc_ages <- read_xlsx("core_sampling_data_MUC_ages.xlsx")
+muc_ages <- read_xlsx("../data/core_sampling_data_MUC_ages.xlsx")
 
 #load GC data
-gc_ages <- read_xlsx("core_sampling_data_GC_ages.xlsx")
+gc_ages <- read_xlsx("../data/core_sampling_data_GC_ages.xlsx")
 # load ddPCR results
-ddpcr <- read_xlsx("ddPCR_abundances.xlsx")
+ddpcr <- read_xlsx("../data/ddPCR_abundances.xlsx")
 
 # load biomonitoring data for Skeletonema and Apocalathium
-biomon_march_to_june <- read.csv("../biomonitoring/Biomonitoring_MUCs_march-to-june__JR.csv")
-biomon_march_to_may <- read.csv("../biomonitoring/Biomonitoring_MUCs_march-to-may__JR.csv")
-biomon_april_to_may <- read.csv("../biomonitoring/Biomonitoring_MUCs_april-may__JR.csv")
+biomon_march_to_june <- read.csv("../data/Biomonitoring_MUCs_march-to-june__JR.csv")
+biomon_march_to_may <- read.csv("../data/Biomonitoring_MUCs_march-to-may__JR.csv")
+biomon_april_to_may <- read.csv("../data/Biomonitoring_MUCs_april-may__JR.csv")
 
 # load biomonitoring data for Diatoms and Dinoflagellates
-biomon_march_to_may_dia_dino <- read.csv("../biomonitoring/Biomonitoring_MUCs_march-to-may__dino-dia__JR.csv")
+biomon_march_to_may_dia_dino <- read.csv("../data/Biomonitoring_MUCs_march-to-may__dino-dia__JR.csv")
 
 # load metabarcoding
-mb_sp <- read.csv("Data_Skeletonema_Apocalathium__all_cores__07june2023.csv")
-mb_dia_dino <- read.csv("../biomonitoring/sedaDNA_MUCs_metabarcoding_Euka02__dino-dia__JR.csv")
+mb_sp <- read.csv("../data/Data_Skeletonema_Apocalathium__all_cores__07june2023.csv")
+mb_dia_dino <- read.csv("../data/sedaDNA_MUCs_metabarcoding_Euka02__dino-dia__JR.csv")
 
 
 ### adjust data ###
