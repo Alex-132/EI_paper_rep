@@ -1,4 +1,4 @@
-setwd("G:/.shortcut-targets-by-id/1mLh3UzlnjPm_h7mFbD5TlPOG-84Bw4vm/phytoark_google_drive/cores_data_jerome/published environmental data")
+setwd("")
 
 # clean environment
 rm(list = ls())
