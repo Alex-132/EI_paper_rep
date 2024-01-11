@@ -1,6 +1,6 @@
 # Data preparation and Downstream analyses
 
-This repository contains several R scripts used for data preparation, analysis, and visualization. Here's a brief overview of each script and their dependencies:
+This repository contains several R scripts and data used for the data preparation, analysis, and visualization. Here's a brief overview of each script and their dependencies:
 
 ## 1. Data Preparation (`data_prep.R`)
 
