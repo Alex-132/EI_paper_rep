@@ -13,6 +13,7 @@ The data used in the downstream analyses are also included in the `R_scripts` di
 - ddPCR measurements
 - Biomonitoring results
 - Metabarcoding results
+- published environmental data
 
 ## Running the Scripts
 
