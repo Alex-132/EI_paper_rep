@@ -1,4 +1,4 @@
-# EI Paper
+# Decoding the Baltic Sea’s Past and Present: A simple eDNA-Based Molecular Index for Ecosystem Assessment
 
 This repository contains scripts and data for replicating the analyses presented in our paper and its supplement.
 
