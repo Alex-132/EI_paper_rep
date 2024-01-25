@@ -1,0 +1,589 @@
+---
+title: "Cleaning Euka02 data set"
+subtitle: "Defining Fred 3. Frequency distribution of reads in samples"
+author: "Juliane Romahn"
+date: "08.06.23"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+editor_options:
+  chunk_output_type: inline
+papersize: a4
+---
+
+## Load data
+```{r include=FALSE}
+library(vegan)
+library(tidyverse)
+library(viridis)
+library(seqinr)
+library(reshape)
+
+setwd("")
+rm(list = ls())
+
+primer= "Euka02"
+input_dir="../data/"
+output_dir="../data/"
+output_plots="03_cleaned_data/plots/"
+
+
+##### ngs file for assigning to sample
+setup_file <- "../data/ngsfilter_GBM_JR_#03_280423__euka02.tsv" ### name,sample,combo --> first 3 files from ngsfile
+setup <- read.table(setup_file, header = FALSE, sep = "\t")[, c(1,2,3)]
+colnames(setup) <- c( "name","sample","combo")
+
+
+if (!dir.exists(output_dir)){ dir.create(output_dir) }
+if (!dir.exists(output_plots)){ dir.create(output_plots) }
+
+################ SCRIPT FOR CLEANING 
+input_table=file.path(input_dir, "12_cleaned_sequences_table.tsv")
+input_data=paste(output_dir,"/", primer,"_cleaned_sequences_table.RData", sep ="") # reformat the save tabel into RData
+
+###############################################################
+## complete names: [1] "MERGED_sample.PA086E_" "MERGED_sample.PA165E_" "MERGED_sample.PA192E_" "MERGED_sample.PA229E_"
+#names(obi[,grep("_$", names(obi))])
+#names(obi[,grep("PA229E", names(obi))])
+#colnames(obi)[colnames(obi)=="MERGED_sample.PA229E_"] <- "MERGED_sample.PA229E_R01"
+#colnames(obi)[colnames(obi)=="obiclean_status.PA229E_"] <- "obiclean_status.PA229E_R01"
+
+############## BLOCK FOR READING AND SAVING DATA
+if( file.exists(input_table)){
+  # otus saved to rownames!!!
+  obi= read.csv(input_table, header=T, sep='\t', row.names = 1) # otus saved to rownames!!!
+  
+  save(obi, file=input_data)
+  
+}else{
+  load(input_data)
+}
+
+names(obi)
+
+
+output_mothur="../data/"
+if (!dir.exists(output_mothur)){ dir.create(output_mothur) }
+
+counttable <- obi[,grep("MERGED_sample|ID", names(obi))]
+names(counttable) <- gsub("MERGED_sample\\.", "", names(counttable))
+counttable$ID <- gsub(":", "_", counttable$ID)
+counttable[is.na(counttable)] <- 0
+
+colnames(counttable)[colnames(counttable)=="ID"] <- "Representative_Sequence"
+counttable$total <- rowSums(counttable[,-1])
+counttable <- cbind(counttable[,c("Representative_Sequence", "total")],counttable[,grep("_R", names(counttable))])
+write.table(counttable, file = paste(output_mothur, paste( "00_counttable", primer, "all_Seq.tsv", sep = "_"), sep ="/"), row.names = F, sep = "\t")
+```
+
+## Define indices for samples and the different controls
+
+```{r include=FALSE}
+# Clean up
+
+
+#########################################
+# Control designation ####
+names_sample_types <- c("Extraction Control", "PCR Control","Positive Control", "Multiplexing control", "Samples")
+colors_samples_types <-c("#325756", "#7d9fc2", "#C582B2", "#51806a", "#4d5f8e")
+#colors_samples_types <- c("#7ACCD7", "#115896","#7D9D33", "#4C4C53") # light blue # darkblue # green #grey
+
+## Extraction controls
+extraction_control ="sample.PAEB"
+## PCR controls
+PCR_control = "sample.PNCO"
+## Multiplexing controls
+multiplexing_control = "sample.MPCO"
+## Positive controls
+positive_control = "sample.POCO"
+
+sample_grep ="sample.PA[0-9]+"
+
+####  for grepping & indexing
+list_of_types = list(sample_grep,extraction_control, PCR_control, positive_control , multiplexing_control)
+list_type_names = c("Sample","ENC", "PNC", "PPC" , "MPC")
+
+
+##########
+
+all_controls = paste(extraction_control,PCR_control,multiplexing_control,positive_control, sep ="|")
+index_sample = grep("MERGED_sample\\.", names(obi))
+
+##############
+index_positive_control <- grep(positive_control, names(obi))
+index_extract_control <- grep(extraction_control, names(obi))
+index_pcr_control <- grep(PCR_control, names(obi))
+index_neg_control <-  grep(PCR_control, names(obi))
+index_multipl_control <-  grep(multiplexing_control, names(obi))
+
+index_just_samples <- index_sample[!index_sample %in% c(index_positive_control,index_extract_control,index_pcr_control, index_multipl_control)]
+
+list_names <- c("Total", "Negative controls", "Negative controls - extraction", "Negative controls - PCR","Negative controls - MPLC",
+                "Positive controls", "Sample")
+list_indices <- list(index_sample,index_neg_control , index_extract_control,index_pcr_control,index_multipl_control,
+                     index_positive_control, index_just_samples)
+
+
+##########
+obi$DEFINITION <- as.character(obi$DEFINITION)
+obi[is.na(obi)] <- 0
+```
+
+#### Note: from here on only the values for cleaning have to be changed 
+### Summary of start data set
+
+```{r}
+
+sum(obi[,index_sample])
+apply(obi[,index_sample], 2, sum) %>% summary # column presence of species
+apply(obi[,index_sample], 1, sum) %>% summary #rows presence in samples
+
+obi_samples <- obi[,index_sample]
+```
+
+## Calculate the sum of reads for the different plates
+
+Can be used for contamination issues etc
+```{r}
+# create table of plate
+save <- setup
+plate <- setup
+plate <-plate %>% separate(combo, c("forward", "reverse"))
+forward_tags <- unique(plate$forward)
+reverse_tags <- unique(plate$reverse)
+forward_no <- length(forward_tags)
+reverse_no <- length(reverse_tags)
+
+counter_plate=1
+data_plate <- data.frame()
+for( i in c(1:(reverse_no/12))){
+  for ( i in c(1:(forward_no/8))){
+    print(counter_plate)
+    
+    data_plate <- rbind(data_plate, data.frame(row = forward_tags[c(i:(i+7))], 
+                                   row_no = LETTERS[1:8], 
+                                   plate =rep(paste("Plate", counter_plate, sep ="_"), 8))
+                  )
+    counter_plate = counter_plate + 1
+  }
+}
+matrix_plate <- data.frame(matrix(1:12, nrow = forward_no, ncol = reverse_no,byrow=TRUE))
+colnames(matrix_plate) <- reverse_tags
+data_plate <- cbind(data_plate, matrix_plate)
+
+
+data_plate <- melt(data_plate, id = c("row", "row_no", "plate"))
+colnames(data_plate) <- c("row", "row_no","plate","col", "col_no")
+
+################
+
+setup <- setup %>% mutate(sample = paste("sample.", sample, sep="")) %>% 
+  separate(combo, c("row","col"))  %>% 
+  mutate(type = rep("NaN", length(sample)))
+
+for (l in c(1:length(list_of_types))){
+  print(list_type_names[l])
+  setup[grep(list_of_types[[l]],setup$sample ),]$type <- list_type_names[l]
+}
+setup$sample <- gsub("sample.","",setup$sample)
+
+
+#d1 <-cast(setup, row ~col)
+
+setup <- merge(data_plate, setup, by = c("col", "row"))
+
+####
+data_sample_read <- data.frame(apply(obi[,index_sample], 2, sum))
+colnames(data_sample_read) <- "sum_reads"
+data_sample_read$sample <- gsub("MERGED_sample.","",rownames(data_sample_read))
+
+
+setup$sample <- gsub("-", ".",setup$sample)
+data_for_plotting <- merge(data_sample_read, setup, by= "sample")
+
+#######
+plot <- ggplot(data_for_plotting, aes(x=col_no, y=row_no, color=type)) + 
+    geom_point(aes(size=sum_reads)) + facet_wrap(~ plate,scales = "free_y")  +scale_size_continuous(range = c(0,10))+
+    scale_y_discrete(limits=rev) + ggtitle(primer) +theme(axis.title = element_text(hjust=1), 
+          plot.title = element_text(face = "bold"),
+          axis.title.x=element_blank(),axis.title.y=element_blank())
+print(plot)
+ggsave(plot, file=paste(output_plots, "/",primer, "_plate_reads.jpg",sep=""), width=12, height= 7)
+
+#rm(data_plate, plate1_columns,plate2_columns,plate1_rows,plate2_rows,  plot, data_for_plotting, setup,data_sample_read)
+
+data_sample_read <- data_sample_read %>%
+  separate(sample, c("type","no","plate")) %>%
+  mutate(type = gsub("^PCO", "PPC", type)) %>%
+  mutate(type = gsub("NEC1|NEC2|NEC3", "ENC", type)) 
+plot<-  ggplot(data_sample_read, aes(x=type, y=sum_reads, fill=plate)) + geom_boxplot() + facet_wrap( .~type, scales= "free") + ggtitle(primer)
+print(plot)
+ggsave(plot, file=paste(output_plots, "/",primer, "_plate_reads_summary__joined.jpg",sep=""), width=12, height= 7)
+
+
+```
+
+### Summary of all data - separated into sample and the different controls
+```{r}
+
+plot <- ggplot(data_sample_read, aes(x = type, y= sum_reads,color=type)) + 
+  geom_violin() + 
+  geom_point() +
+  facet_wrap( .~type, scales= "free")+   ggtitle(primer) +
+  theme_minimal() +theme(axis.title = element_text(hjust=1, ), axis.text.x=element_blank(),
+          plot.title = element_text(face = "bold")) +
+  theme(legend.position="none") # no legend
+
+print(plot)
+ggsave(plot, file=paste(output_plots, "/",primer, "_overall_reads_summary__joined.jpg",sep=""), width=12, height= 7)
+
+```
+
+
+###############################################
+# Diagnostic plots ####
+Fred 1. Frequency distribution of read numbers in **ESVs**
+This step defines a rarity threshold for **ESVs**
+A sequence variant with less, than 120 sequences is considered as rare. 
+Rare and frequent sequence variants:
+
+```{r warning=FALSE}
+reads_per_seq_variant <- apply(obi[,index_sample],1,sum) #### MARGIN =1 , for every row
+freq_table = data.frame(table(reads_per_seq_variant))
+freq_table$reads_per_seq_variant <- 
+  as.vector(freq_table$reads_per_seq_variant)
+plot(freq_table, log = c("xy"), xlab = c("Read count in seq variant")) +
+  abline(v =90, col="red")
+
+## just keep the not rare ESVs
+index_rare_sequence = apply(obi[,index_sample],1,sum) >= 90
+summary(index_rare_sequence)
+
+apply(obi[index_rare_sequence,index_sample],1,sum) %>% summary
+apply(obi[!index_rare_sequence,index_sample],1,sum) %>% summary
+```
+
+
+################################################
+# Fred 2. Occupancy of ESVs in **samples**
+### In how many samples do ESVs occur?
+
+```{r}
+locations_per_seq_variant <- apply(obi[,index_sample]!= 0 , 1, sum)  #remove rows with any zero
+freq_loc_table <- data.frame(table(locations_per_seq_variant))
+freq_loc_table$locations_per_seq_variant <- as.vector(freq_loc_table$locations_per_seq_variant)
+plot(freq_loc_table, log = c("xy"), xlab = c(" Occupancy of seq variant")) +
+  abline(v = 10, col="red")
+
+## just keep ESVs with with high occupancy
+index_low_occurence <- apply(obi[,index_sample]!=0, 1, sum)  >= 10
+summary(index_low_occurence)
+
+apply(obi[index_low_occurence,index_sample],1,sum) %>% summary
+apply(obi[!index_low_occurence,index_sample],1,sum) %>% summary
+
+```
+
+
+###############################################
+# Fred 3. Frequency distribution of reads in **samples**
+ This defines a rarity threshold for **samples**
+ There are some samples in which there are weirdly few reads 
+
+
+##### Update:  All samples should be considered, because of Sample_9
+```{r warning=FALSE}
+
+sample_reads <- apply(obi[,index_sample],2,sum) # MARGIN=2 for every column
+sample_reads <- data.frame(sample_reads)
+sample_reads$reads <- rownames(sample_reads)
+### grouping of samples
+sample_reads[grep(extraction_control,sample_reads$reads ),]$reads <- "Extraction control"
+sample_reads[grep(PCR_control,sample_reads$reads ),]$reads <- "PCR control"
+#sample_reads[grep(multiplexing_control,sample_reads$reads ),]$reads <- "PCR control"
+sample_reads[grep(positive_control,sample_reads$reads ),]$reads <- "Positive control"
+sample_reads[grep(multiplexing_control,sample_reads$reads ),]$reads <- "Multiplexing control"
+sample_reads[grep(sample_grep,sample_reads$reads ),]$reads <- "Sample"
+
+ggplot(sample_reads, aes(x=sample_reads, fill=reads)) + #
+  geom_histogram(  color="#e9ecef", alpha=0.8, position = 'identity') + # binwidth=0.1,
+  scale_fill_manual(values=c(colors_samples_types)) +
+  #theme_ipsum() +
+  labs(fill="")+
+  geom_vline(xintercept=10, color = "red") +
+  scale_x_log10(labels = scales::comma)
+
+intervals <- cut(sample_reads$sample_reads, 
+                 breaks=seq(from=0, to = max(sample_reads$sample_reads), by = 10000))
+#table(intervals)
+
+
+index_small_replicate = apply(obi[,index_sample],2,sum) >= 10
+summary(index_small_replicate)
+
+apply(obi[index_small_replicate,index_sample],1,sum) %>% summary
+apply(obi[!index_small_replicate,index_sample],1,sum) %>% summary
+
+## Replicates you loose
+print(gsub("MERGED_sample.","",colnames(obi[,index_sample][,!index_small_replicate])))
+```
+
+###############################################
+# Fred 4. richness ~ reads
+ This identifies 
+ 1) the linearly growing phase of the richness - read number relationship. Richness in samples is likely driven only by read numbers in this phase.
+ 2) replicates that have weird richness-read number relationship: these have high read numbers, but strangely low richness that falls outside of the expected distribution.
+
+ Richness is mostly driven by read counts (more reads mean higher richness),
+ but the curve is steeper in the low count/richness region.
+ Remove samples in the low count/richness region.
+
+
+#### UPDATE: not considered, just positive controls have a weird richness
+Note: sample replicates with less than 50 asv and more than 900 reads will be removed
+```{r}
+rich_reads <- data.frame()
+
+names_sample_types <- c("positive control", "extraction control", "pcr control", "mpl control","samples")
+list_sample_types <- list(index_positive_control, index_extract_control, index_multipl_control,
+                          index_pcr_control, index_just_samples)
+for (i in 1:length(list_sample_types)) {
+  arrai <- list_sample_types[[i]]
+  local = data.frame(
+        count = apply(obi[,arrai],2,sum),
+        rich = specnumber(t(obi[,arrai])))
+  rich_reads <- rbind(rich_reads, cbind(local, type = rep(names_sample_types[i], length(local$count))))
+}
+
+rich_reads_plot <- rich_reads[apply(rich_reads!=0, 1, all),]  ## otherwise problems to log2
+
+ggplot(rich_reads_plot, aes(x= count, y= rich, color= type)) + geom_point() + coord_trans(x="log2", y="log2") + theme_classic()+
+  geom_hline(yintercept = 5, color = "red")+ #richness/species/otus
+  geom_vline(xintercept= 50, color = "red")  #counts
+
+index_weird_replicate <- rich_reads$rich < 5 & rich_reads$count > 50
+summary(index_weird_replicate)
+
+
+apply(obi[index_weird_replicate,index_sample],1,sum) %>% summary
+apply(obi[!index_weird_replicate,index_sample],1,sum) %>% summary
+```
+
+
+
+## Apply filters for sequences/**ESVs**
+
+```{r include=FALSE}
+###################################################
+# Head - singleton treatment ####
+## Head-singleton-internal filter
+index_head <- obi$obiclean_headcount >= obi$obiclean_internalcount |
+  obi$obiclean_singletoncount >= obi$obiclean_internalcount
+
+## Combined ESV filter
+index_seq_combined = index_rare_sequence & index_low_occurence & index_head
+
+# table with otus and boolean values
+
+# Filter out rare OTUs and internal OTUs.
+samples <- obi[index_seq_combined,index_sample]
+save(samples, file = paste(output_dir, "/",primer, "__cleaned_data_withControls__joined.RData", sep =""))
+
+###########################################################
+```
+
+## Checking after first cleaning
+
+```{r}
+#####################################
+# Uncleaned
+sum(samples)
+apply(samples, 2, sum) %>% summary
+#sum(samples_batch2)
+#apply(samples_batch2, 2, sum) %>% summary
+```
+### Checking Negative controls
+
+```{r include=FALSE}
+# Control cleanup ####
+# Negative controls
+
+## Extraction controls
+EXC = grep(extraction_control, names(samples))
+
+## PCR controls
+PNC = grep(PCR_control, names(samples))
+
+## Multiplexing controls
+MPC = grep(multiplexing_control, names(samples))
+PPC = grep(positive_control, names(samples))
+######################################################
+```
+
+### Substract reads found in Neg Controls from Samples
+
+```{r}
+#########################################################
+## Clean abundance matrix of contamination from negative controls
+#Some sequence variants have many reads in the negatives
+controls <- samples[,c(EXC,PNC,MPC)]
+max_in_negative <- apply(samples[,c(EXC,PNC,MPC)], 1, max)
+
+max_in_negative_db <- as.data.frame(max_in_negative)
+head(table(max_in_negative),100)
+
+
+##############
+#Sweep the maximum counts of an OTU in any negative control from all observations.
+#Set negative values to 0.
+###
+neg_controlled <- samples
+
+# Return an array obtained from an input array by sweeping out a summary statistic.
+neg_controlled <- sweep(neg_controlled, 1, max_in_negative, "-") 
+neg_controlled[neg_controlled < 0] <- 0
+
+########################################
+```
+## Remove controls
+```{r include=FALSE}
+#############################################################
+# Final cleanup ####
+### remove empty rows and columns
+
+neg_controlled[,grep(all_controls, names(neg_controlled))] <- NULL
+names(neg_controlled) <- gsub('MERGED_sample.', '', names(neg_controlled))
+
+neg_controlled <- neg_controlled[apply(neg_controlled, 1, sum) > 0, apply(neg_controlled, 2, sum) > 0] 
+  
+#
+
+neg_controlled_sweeped <- neg_controlled # to save cleaning status for statitstics later
+
+
+sum(neg_controlled)
+neg_controlled <- na.omit(neg_controlled)
+sum(neg_controlled)
+
+neg_controlled$otu <- rownames(neg_controlled)
+save(neg_controlled, file = paste(output_dir, "/",primer, "__cleaned_data__joined.RData", sep =""))
+
+###########################################################
+```
+
+```{r include=FALSE}
+##################################################################
+#######
+# extract otu and id for left otu
+obi_information <- data.frame(otu = rownames(obi), ID = obi$ID)
+reduced_otu <- merge(neg_controlled, obi_information, by = "otu")
+length(obi_information$otu)
+reduced_otu <- reduced_otu[,c("otu", "ID")]
+
+save(reduced_otu, file = paste(output_dir, "/",primer, "__tableOtuInfo__joined.RData", sep =""))
+write.fasta(sequences = as.list(reduced_otu$otu), names = reduced_otu$ID,  file.out = paste(output_dir, "/",primer, "__cleaned_otu_Seq__joined.fasta", sep=""))
+
+#####
+```
+
+## Remove weird replicates: 
+#### Meaning: a.) low amount of reads
+####          b.) weird richness-read number relationship
+
+```{r}
+## Sample filters combined
+index_replicate_combined <- index_small_replicate & !index_weird_replicate
+index_replicate_combined<- index_replicate_combined[!grepl(all_controls, names(index_replicate_combined))]
+names(index_replicate_combined) <- gsub('MERGED_sample.', '', names(index_replicate_combined))
+
+samples_left <- names(neg_controlled)
+samples_left <- samples_left[samples_left != "otu"]
+index_replicate_combined <- index_replicate_combined[samples_left]
+
+names(neg_controlled[,!index_replicate_combined])
+neg_controlled <- neg_controlled[,index_replicate_combined]
+
+neg_controlled$otu <- rownames(neg_controlled)
+
+save(neg_controlled, file = paste(output_dir, "/",primer, "__cleaned_data_good_replicates__joined.RData", sep =""))
+```
+
+## Final statistics
+```{r warning=FALSE}
+length(obi_information$otu)
+length(neg_controlled$otu)
+rownames(neg_controlled) <-neg_controlled$otu
+neg_controlled$otu <- NULL
+sum(neg_controlled)
+sum(controls)
+apply(neg_controlled, 2, sum) %>% summary
+apply(neg_controlled, 1, sum) %>% summary
+
+print("Max amount on reads loosing per replicate")
+sum(max_in_negative)
+```
+
+
+### Print statistics about reads and otus for the diffrent steps
+```{r include=FALSE}
+
+#################
+
+step = c("1.step", "1.step","1.step",
+         "filter", "filter","filter", 
+         "2.step", "2.step","2.step",
+         "controls", "controls", "controls", "controls","controls",
+         "3.step","3.step","3.step",
+         "4.step","4.step","4.step")
+
+pattern = c("After ObiTools3","After ObiTools3","After ObiTools3",
+            "Rare ESVs - abundance", "Rare ESVs - occupancy","Head-singleton-internal filter" ,
+            "Without rare & Head-singleton-internal filter", "Without rare & Head-singleton-internal filter","Without rare & Head-singleton-internal filter",
+            "Negative Controls - Extraction", "Negative Controls - PCR", "Negative Controls - Multiplex",  "Positive Controls","All controls",
+            "Cleaned with controls", "Cleaned with controls","Cleaned with controls",
+            "Cleaned replicates", "Cleaned replicates","Cleaned replicates")
+
+methods <- c("Total","Mean", "Std","Total","Total","Total",
+             "Total","Mean", "Std","Total","Total","Total", "Total", "Total",
+             "Total","Mean", "Std","Total","Mean", "Std")
+
+
+
+amount_otus <-c(length(rownames(obi[rowSums(obi[,index_sample])>0,index_sample])),### 1.step
+                apply(obi[, index_sample], 2, function(c)sum(c!=0)) %>% mean, # mean number of represente otu per site,
+                apply(obi[, index_sample], 2, function(c)sum(c!=0)) %>% sd, # mean number of represente otu per site,
+                length(index_rare_sequence[index_rare_sequence==FALSE]), ### filter
+                length(index_low_occurence[index_low_occurence==FALSE]),
+                length(index_head[index_head==FALSE]), 
+                length(rownames(samples[rowSums(samples[])>0,])), ### 2.step
+                apply(samples, 2, function(c)sum(c!=0)) %>% mean, # mean number of represente otu per site,
+                apply(samples, 2, function(c)sum(c!=0)) %>% sd, # mean number of represente otu per site,
+                length(rownames(samples[rowSums(samples[, EXC])>0,EXC])), ### controls
+                length(rownames(samples[rowSums(samples[, PNC])>0,PNC])), 
+                length(rownames(samples[rowSums(samples[, MPC])>0,MPC])),
+                length(rownames(samples[rowSums(samples[, PPC])>0,PPC])),
+                length(rownames(samples[rowSums(samples[, c(EXC,PNC,MPC,PPC)])>0,PPC])),
+                length(rownames(neg_controlled_sweeped[rowSums(neg_controlled_sweeped[])>0,])), ### 3. step
+                apply(neg_controlled_sweeped, 2, function(c)sum(c!=0)) %>% mean, # mean number of represente otu per site,
+                apply(neg_controlled_sweeped, 2, function(c)sum(c!=0)) %>% sd, # mean number of represente otu per site,
+                length(rownames(neg_controlled[rowSums(neg_controlled[])>0,])), ### 4. step
+                apply(neg_controlled, 2, function(c)sum(c!=0)) %>% mean, # mean number of represente otu per site,
+                apply(neg_controlled, 2, function(c)sum(c!=0)) %>% sd # mean number of represente otu per site,
+                ) 
+
+amount_reads <- c(sum(obi[,index_sample]), apply(obi[,index_sample],2,sum) %>% mean, apply(obi[,index_sample],2,sum) %>% sd,
+                  sum(obi[!index_rare_sequence,index_sample]), sum(obi[!index_low_occurence,index_sample]), sum(obi[!index_head,index_sample]), 
+                  sum(samples),apply(samples,2,sum) %>% mean,apply(samples,2,sum) %>% sd,
+                  sum(samples[,EXC]), sum(samples[,PNC]), sum(samples[,MPC]),sum(samples[,PPC]),sum(samples[, c(EXC,PNC,MPC,PPC)]),
+                  sum(neg_controlled_sweeped), apply(neg_controlled_sweeped,2,sum) %>% mean, apply(neg_controlled_sweeped,2,sum) %>% sd,
+                  sum(neg_controlled), apply(neg_controlled,2,sum) %>% mean, apply(neg_controlled,2,sum) %>% sd
+)
+
+#summary(index_rare_sequence)
+
+
+statistics <- data.frame(steps = step, description = pattern, methods = methods,OTU = amount_otus, reads = amount_reads, primer = rep(primer, length(amount_reads)))
+write.csv(statistics, paste(output_dir, "/", primer, "__statistics_reads_N_otus__joined.csv", sep =""), row.names = FALSE)
+
+```

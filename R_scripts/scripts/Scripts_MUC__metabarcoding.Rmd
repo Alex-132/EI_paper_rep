@@ -1,0 +1,218 @@
+---
+title: "Insight Euka02"
+subtitle: "Lorem ipsum"
+author: "Juliane Romahn"
+date: "07.08.23"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+editor_options:
+  chunk_output_type: inline
+papersize: a4
+---
+### based on 05_statistics_insight.Rmd
+```{r}
+library(tidyverse)
+library(readxl)
+library(vegan)
+
+
+output_dir <- "../data/"
+if (!dir.exists(output_dir)){ dir.create(output_dir) }
+
+```
+
+
+```{r}
+## taxonomy data
+mothur_out="../data/"
+mothur_data="Euka02__cleaned_otu_Seq__joined.0_SSU_mothur.wang__tax.tx"
+
+## community data
+abu_out="../data/"
+abu_data="Euka02__cleaned_data__joined.RData"
+abu_id="Euka02__tableOtuInfo__joined.RData"
+
+
+## load sample infos: sample name, location, depth, age, concentration, weight
+meta_data <- read.table(file="./data/Metadata_extracts_sample_horizon__2023-08-16_vers.csv", header = T)
+```
+
+## taxonomy file
+```{r}
+mothur_file = paste(mothur_out,mothur_data, sep ="/")
+taxo <- read.table(mothur_file, header = T, sep=",")
+```
+
+## prepare abu data
+```{r}
+abu.info_file <- paste(abu_out,abu_id, sep ="/")
+load(abu.info_file)
+reduced_otu$ID <- gsub(":","_",reduced_otu$ID  )
+abu_file <- paste(abu_out,abu_data, sep ="/")
+load(abu_file)
+abu_file$otu <- rownames( neg_controlled)
+neg_controlled <- merge(reduced_otu, neg_controlled, by="otu")
+rownames(neg_controlled) <- neg_controlled$ID
+neg_controlled[,c("ID", "otu")] <- NULL
+
+abu_data <- as.data.frame(t(neg_controlled))
+abu_data$replicate <- rownames(abu_data)
+abu_data$sample_id <- gsub("_.*","",abu_data$replicate)
+rm(reduced_otu)
+```
+
+```{r}
+abu_data <- merge(meta_data, abu_data, by = "sample_id")
+abu_data.collapsed <-abu_data %>% pivot_longer(!c(sample_id, station, depth, tag, sample_weight,age, age.BP, replicate,AgeModel.Version), names_to = "ID", values_to = "reads")
+abu_data.collapsed <- merge(abu_data.collapsed, taxo, by = "ID")
+abu_data.collapsed$age.BP <- round(as.numeric(abu_data.collapsed$age.BP))
+abu_data.collapsed$age <- round(as.numeric(abu_data.collapsed$age))
+
+save(abu_data.collapsed, file= "All_cores_joinedTaxo__seda_DNA_data.RData")
+```
+
+
+```{r}
+load("All_cores_joinedTaxo__seda_DNA_data.RData")
+if (!dir.exists(output_dir)){ dir.create(output_dir) }
+set.seed(12345)
+## ordinations
+
+abu_data_dino_dia_MUC <- abu_data.collapsed %>%
+                              filter(station !="EMB262_6_30_GC" ,station != "EMB262_12_2_GC", station != "EMB262_12_3_GC")%>%
+                              filter(division =="Dinoflagellata" |class == "Bacillariophyta") %>% # 
+                              select(station,tag,sample_id,replicate, ID, reads) %>% unique%>%
+                              pivot_wider(names_from = ID, values_from = reads )
+
+plot_lists=list()
+all_replicate_coordinates <- data.frame()
+for(loc in unique(abu_data_dino_dia_MUC$station)){
+  subset <- abu_data_dino_dia_MUC%>% filter(station == loc)
+  subset <- subset[rowSums(subset[,grep("SUB", names(subset))])>0,]
+  subset <- as.data.frame(subset)
+  rownames(subset) <- subset$replicate
+  NMDS_result <- metaMDS(subset[,grep("SUB", names(subset))])
+  
+  replicate_coordinates <- data.frame(NMDS_result["points"])
+  replicate_coordinates$replicate <- rownames(replicate_coordinates)
+  replicate_coordinates <- merge(replicate_coordinates, subset[,!grepl("SUB", names(subset))], by ="replicate", all.x = TRUE)
+  all_replicate_coordinates <- rbind(all_replicate_coordinates,replicate_coordinates )
+  
+  plot <- ggplot() +
+      geom_point(data = replicate_coordinates, aes(x = points.MDS1, y = points.MDS2, 
+                                         color = tag), size=2) + 
+      annotate(geom = "label", 
+               x = min(replicate_coordinates$points.MDS1)+ (max(replicate_coordinates$points.MDS1) -
+                                                              min(replicate_coordinates$points.MDS1))/3, 
+               y =min(replicate_coordinates$points.MDS2), 
+               size =4,
+               label = paste("Stress: ", round(NMDS_result$stress, digits = 3)))+ #+
+      labs(color = "Tags", title = loc) + theme( axis.text = element_text(size = 12)) + theme_light()+ theme(legend.position = "none")
+  print(plot)
+  plot_lists=c(plot_lists, list(plot))
+}
+plots <- ggpubr::ggarrange(plotlist=plot_lists,
+                  labels = c("A", "B","C"),
+                  ncol = 3, nrow = 1)
+ggsave(plots, file=file.path(output_dir,"Ordinationplot_dino_dia_communities_MUC.png"), width=14, height=6)
+ggsave(plots, file=file.path(output_dir,"Ordinationplot_dino_dia_communities_MUC.pdf"), width=14, height=6)
+
+abu_data_dino_dia_MUC$total.reads <- rowSums(abu_data_dino_dia_MUC[,grep("SUB", names(abu_data_dino_dia_MUC))])
+stats <- abu_data_dino_dia_MUC[,!grepl("SUB", names(abu_data_dino_dia_MUC))]
+
+### identify weird replicates
+MUC_28 <- all_replicate_coordinates %>% filter(station =="EMB262_6_28_MUC") 
+#EMB262_6_28_MUC_28 PA142E_R03, EMB262_6_28_MUC_38  PA138E_R02, EMB262_6_28_MUC_41 PA165E_R01
+
+MUC12 <- all_replicate_coordinates %>% filter(station =="EMB262_12_2_MUC") #EMB262_12_2_MUC_35 PA147E_R03
+# PA141E_R01 - EMB262_13_8_MUC_15 & PA061E_R02 - EMB262_13_8_MUC_25
+
+### total read number of weird replicates
+stats[grep("PA142E_R03|PA138E_R02|PA165E_R01|PA147E_R03|PA141E_R01|PA061E_R02", stats$replicate),]
+
+```
+
+```{r}
+
+####################
+abu_data.collapsed$replicate <- gsub(".*_", "",abu_data.collapsed$replicate)
+colnames(abu_data.collapsed)
+
+
+abu_data.collapsed2.1 <- abu_data.collapsed %>%
+                              group_by(station, age, depth,  sample_weight, tag, sample_id, 
+                                      kingdom, division, class, family,genus, species, ID ) %>%
+                              summarise(repl.pa = sum(reads != 0), av.reads = mean(reads)) %>%
+                              mutate(depth = as.numeric(depth)) %>%
+                              filter(station !="EMB262_6_30_GC" ,station != "EMB262_12_2_GC", station != "EMB262_12_3_GC")
+
+abu_data.collapsed2 <- abu_data.collapsed2.1 %>%
+                              group_by(station, age, depth,  tag, sample_id, 
+                                      kingdom ) %>%
+                              summarise(repl.pa = sum(repl.pa), sum.reads = sum(av.reads)) %>%
+                              mutate(depth = as.numeric(depth))
+
+
+abu_data.collapsed2 %>% filter( station == "EMB262_13_8_MUC", kingdom =="Eukaryota") %>%
+  ggplot(aes(x= age, y= sum.reads, color= station, group =1)) +
+    geom_line() + geom_point()
+
+abu_data.collapsed2 %>% filter( station == "EMB262_12_2_MUC", kingdom =="Eukaryota") %>%
+  ggplot(aes(x= age, y= sum.reads, color= station, group =1)) +
+    geom_line() + geom_point()
+
+abu_data.collapsed2 %>% filter( station == "EMB262_6_28_MUC", kingdom =="Eukaryota") %>%
+  ggplot(aes(x= age, y= sum.reads, color= station, group =1)) +
+    geom_line() + geom_point()
+
+rm(abu_data.collapsed2)
+```
+```{r}
+abu_data.collapsed2 <- abu_data.collapsed2.1%>%
+                              filter(division =="Dinoflagellata" | class == "Bacillariophyta")%>%
+                              group_by(station, age, depth,  sample_weight, tag, sample_id, kingdom, division, class ) %>%
+                              summarise(repl.pa = sum(repl.pa), sum.reads = sum(av.reads)) %>%
+                              mutate(depth = as.numeric(depth), sample_weight= as.numeric(sample_weight)) %>%
+                              mutate(norm.reads = (sum.reads/sample_weight)*500)%>%
+                              mutate(Interest = ifelse(division == "Dinoflagellata", "Dinoflagellata", "Diatom"))
+
+abu_data.collapsed2 %>% filter( station == "EMB262_13_8_MUC") %>%
+  ggplot(aes(x= age, y= norm.reads,  color= class, group =class)) +
+    geom_line() + geom_point(aes(shape=division))+ ggtitle( "EMB262_13_8_MUC")
+
+abu_data.collapsed2 %>% filter( station == "EMB262_12_2_MUC") %>%
+  ggplot(aes(x= age, y= norm.reads,  color= class, group =class)) +
+    geom_line() + geom_point(aes(shape=division))+ ggtitle("EMB262_12_2_MUC")
+
+abu_data.collapsed2 %>% filter( station == "EMB262_6_28_MUC") %>%
+  ggplot(aes(x= age, y= norm.reads, color= class, group =class)) +
+    geom_line() + geom_point(aes(shape=division))+ ggtitle("EMB262_6_28_MUC")
+
+abu_data.collapsed2$age <- round(abu_data.collapsed2$age)
+write.csv(abu_data.collapsed2, file=file.path(output_dir, "sedaDNA_MUCs_metabarcoding_Euka02__dino-dia.sep__JR.csv"), row.names = F)
+```
+
+```{r}
+abu_data.collapsed3 <- abu_data.collapsed2%>%
+                              group_by(station, age, depth,  sample_weight, tag, sample_id, kingdom, Interest) %>%
+                              summarise(repl.pa = sum(repl.pa), sum.reads = sum(sum.reads)) %>%
+                              mutate(depth = as.numeric(depth), sample_weight= as.numeric(sample_weight))%>%
+                              mutate(norm.reads = (sum.reads/sample_weight)*500)
+
+abu_data.collapsed3 %>% filter( station == "EMB262_13_8_MUC") %>%
+  ggplot(aes(x= age, y= norm.reads,  color= Interest, group =Interest)) +
+    geom_line() + geom_point(aes(shape=Interest))+ ggtitle( "EMB262_13_8_MUC")
+
+abu_data.collapsed3 %>% filter( station == "EMB262_12_2_MUC") %>%
+  ggplot(aes(x= age, y= norm.reads,  color= Interest, group =Interest)) +
+    geom_line() + geom_point(aes(shape=Interest))+ ggtitle("EMB262_12_2_MUC")
+
+abu_data.collapsed3 %>% filter( station == "EMB262_6_28_MUC") %>%
+  ggplot(aes(x= age, y= norm.reads, color= Interest, group =Interest)) +
+    geom_line() + geom_point(aes(shape=Interest))+ ggtitle("EMB262_6_28_MUC")
+
+write.csv(abu_data.collapsed3, file=file.path(output_dir, "sedaDNA_MUCs_metabarcoding_Euka02__dino-dia__JR.csv"), row.names = F)
+```
+

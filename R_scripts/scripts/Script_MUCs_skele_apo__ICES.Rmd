@@ -1,0 +1,366 @@
+---
+title: "Insight biomonitoring"
+subtitle: "Skeletonema & Apocalathium"
+author: "Juliane Romahn"
+date: "26.07.23"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+editor_options:
+  chunk_output_type: inline
+papersize: a4
+---
+
+```{r}
+library(tidyverse)
+library(hrbrthemes)
+library("worrms")
+library(ggplot2)
+library(ggthemes) # Load
+```
+
+
+```{r}
+table <- "../data/DomePhytoplankton_Data_0420454538.csv"
+output_path <- "../data/"
+
+MUC_data <- data.frame(location=c("Gulf of Finland"	,"Landsort Deep",	"Eastern Gotland Basin"),
+                       short=c("EMB262_12_2_MUC",	"EMB262_13_8_MUC",	"EMB262_6_28_MUC"	),
+                       latt =c(59.34443, 58.38391, 57.17004),
+                       long = c(23.36461, 18.15997, 20.07244))
+```
+
+```{r}
+
+ices_data <- read.table(table, header= T, sep ="'")
+#ices_data<- ices_data[c(1:100),]
+
+col_interest <- c("tblSampleID", "STATN", "HELCOM_subbasin", "HELCOM_L4", "Latitude", "Longitude", "MNDEP", "MXDEP", "MYEAR", "DATE", "Year", "Month", "Day",
+         "RLIST", "SPECI", "SPECI_name", "AphiaID", "WoRMS_name","AphiaID_accepted","WoRMS_accepted_name", "SIZCL", "SIZRF", "TRPHY", "STAGE",
+         "Value", "PARAM", "PARAM_desc","MUNIT", "final_value", "final_value_unit" )
+#colnames(ices_data)
+ices_data <- ices_data[,col_interest]
+ices_data <- ices_data[-4,]
+save(ices_data, file= "ICESdata_DomePhytoplankton_selectedColumns.RData")
+```
+
+##reduce dataset
+```{r}
+#load(file= "ICESdata_DomePhytoplankton_selectedColumns.RData")
+muc_ices_data <- data.frame()
+i <- 1
+for ( i in c(1:length(MUC_data$location))){
+  space_holder <- ices_data %>% 
+      filter(Longitude < (MUC_data$long[i] * 1.05) , Longitude > (MUC_data$long[i] * 0.95)) %>%
+      filter(Latitude < (MUC_data$latt[i] * 1.05) , Latitude > (MUC_data$latt[i] * 0.95))
+
+  space_holder$MUC <- rep(MUC_data$short[i], length(space_holder$PARAM) )
+  muc_ices_data <- rbind(muc_ices_data, space_holder)
+}
+rm(ices_data,space_holder)
+save(muc_ices_data, file= "../data/ICESdata_DomePhytoplankton_selectedColumns__PhytoArk_MUCs.RData")
+
+unique(muc_ices_data[, c("MUC", "Latitude","Longitude")]%>% 
+                 mutate(Latitude = round(as.numeric(Latitude),1), Longitude = round(as.numeric(Longitude), 1)))%>%
+  group_by(MUC) %>% summarise(min_long= min(Longitude), max_long = max(Longitude),
+                              min_lat= min(Latitude), max_lat = max(Latitude),)
+
+```
+
+
+## check worms 
+```{r}
+worms_names <- sort(as.numeric(unique(muc_ices_data$AphiaID))) #SPECI_name
+worms.tax <- data.frame()
+
+i <- 1
+
+
+while( i < length(worms_names) ){
+  short_ids <- list()
+  
+  if ( i < length(worms_names) -50){
+      short_ids <- wm_record(id = worms_names[c(i:(i+49))], marine_only =F)
+  }
+  else{
+     short_ids <- wm_record(id = worms_names[c(i:length(worms_names))], marine_only =F)
+  }
+  worms.tax <- rbind(worms.tax,short_ids )
+  
+  i <- i +49
+}
+
+worms.tax <- unique(worms.tax)
+rm(short_ids,worms_names)
+save(worms.tax, file=file.path(output_path,"Worms_taxonomy_data_ICES_all.RData"))
+
+
+```
+
+#most continues is ABUNDNR
+```{r}
+load("ICESdata_DomePhytoplankton_selectedColumns__PhytoArk_MUCs.RData")
+load(file.path(output_path,"Worms_taxonomy_data_ICES_all.RData"))
+worms_alex <- worms.tax %>% filter(genus=="Skeletonema"| 
+                                     genus == "Apocalathium" | genus=="Scrippsiella" | genus =="Peridinium" | genus =="Protoperidinium ") %>%
+                            filter(valid_name!="Pericrocotus brevirostris")
+                        
+worms_alex <- worms_alex[,c("AphiaID","scientificname", "valid_name", "genus")]
+
+
+muc_ices_data2 <- merge(muc_ices_data, worms_alex, by="AphiaID") %>%
+  mutate(Month = as.numeric(Month))#%>%
+#  filter(Month >2 & Month < 6) 
+  
+
+ICES_GoF <- muc_ices_data2 %>% filter(MUC==MUC_data$short[1]) 
+
+unique(ICES_GoF[,c("Year","DATE","HELCOM_L4","PARAM")]) %>% 
+  group_by(Year, HELCOM_L4, PARAM) %>%
+  dplyr::summarise(n=n()) %>%
+  ggplot(aes(x=Year, y= n, color=HELCOM_L4, group=HELCOM_L4)) +
+    geom_point() +
+    geom_line() +
+    ggtitle("Biomonitoring measurements per year") +
+    theme_hc() + theme(axis.text.x = element_text(angle = 90,hjust=1)) + facet_wrap(~PARAM)
+
+
+#ICES_GoF <- muc_ices_data %>% filter(MUC==MUC_data$short[1], tblSampleID== "1114860") %>% filter(PARAM=="ABUNDNR")
+```
+## summarize to get overview which data exist
+```{r}
+muc_biomass.data <- muc_ices_data %>% 
+  filter(PARAM=="ABUNDNR")%>% # just count data
+  filter(Month >2 & Month < 7)  %>%  # just main bloom season
+  mutate(final_value = as.numeric(final_value)) %>%
+  group_by(MUC, tblSampleID, HELCOM_subbasin, HELCOM_L4, Latitude, Longitude, Year, Month, Day) %>% # keep this parameters
+  summarise(total.mass =sum(final_value)) %>% # calc total count of plankton 
+  group_by(MUC, Year, Month)%>%  ## average count data
+  summarise(av.biomass= mean(total.mass),med.biomass= median(total.mass))
+```
+
+
+# check the Availability of data for the various month
+combine the different sizeclasses of the different spec
+```{r}
+muc_ices_data.NoSizeClass <- merge(muc_ices_data, worms_alex, by="AphiaID") %>%
+  mutate(Month = as.numeric(Month), final_value= as.numeric(final_value))%>%
+  filter(PARAM=="ABUNDNR")%>%
+  group_by(MUC, AphiaID, tblSampleID,HELCOM_subbasin,HELCOM_L4,Latitude, Longitude ,DATE, Year,Month ,Day, SPECI_name,WoRMS_name, AphiaID_accepted,genus,WoRMS_accepted_name)%>%
+  summarise(final_value = sum(final_value))
+
+muc_ices_data2 <-muc_ices_data.NoSizeClass %>%
+  filter(Month >2 & Month < 7) 
+
+muc_ices_data_LATE <- muc_ices_data.NoSizeClass %>%
+  filter(Month >8) 
+
+ICES_GoF <- muc_ices_data2 %>% filter(MUC==MUC_data$short[1])
+ICES_Landsort <- muc_ices_data2 %>% filter(MUC==MUC_data$short[2])
+ICES_EGB <- muc_ices_data2 %>% filter(MUC==MUC_data$short[3])
+
+
+unique(ICES_GoF[,c("Year","DATE","Month")]) %>% 
+  group_by(Year,  Month) %>%
+  dplyr::summarise(n=n()) %>%
+  mutate(Month2 =as.character(Month))%>%
+  ggplot(aes(x=Year, y= n, fill=Month2))  + 
+    geom_bar(position="stack", stat="identity")
+    ggtitle("Biomonitoring measurements per year") +
+    theme_hc() + theme(axis.text.x = element_text(angle = 90,hjust=1)) 
+    
+unique(ICES_Landsort[,c("Year","DATE","Month")]) %>% 
+  group_by(Year,  Month) %>%
+  dplyr::summarise(n=n()) %>%
+  mutate(Month2 =as.character(Month))%>%
+  ggplot(aes(x=Year, y= n, fill=Month2))  + 
+    geom_bar(position="stack", stat="identity")
+    ggtitle("Biomonitoring measurements per year") +
+    theme_hc() + theme(axis.text.x = element_text(angle = 90,hjust=1)) 
+
+unique(ICES_EGB[,c("Year","DATE","Month")]) %>% 
+  group_by(Year,  Month) %>%
+  dplyr::summarise(n=n()) %>%
+  mutate(Month2 =as.character(Month))%>%
+  ggplot(aes(x=Year, y= n, fill=Month2))  + 
+    geom_bar(position="stack", stat="identity")
+    ggtitle("Biomonitoring measurements per year") +
+    theme_hc() + theme(axis.text.x = element_text(angle = 90,hjust=1)) 
+#rm(muc_ices_data,worms_alex)
+```
+
+### substract information
+
+```{r}
+
+muc_ICES <- muc_ices_data2 %>% 
+  mutate(final_value = as.numeric(final_value)) %>%
+  group_by(MUC, SPECI_name, Year, Month)%>% 
+  summarise(av.stations= mean(final_value),med.stations= median(final_value))
+rm(muc_ices_data2)
+  
+muc_ICES2 <- muc_ICES %>%
+        pivot_wider(id_cols =!med.stations, names_from = SPECI_name, values_from = av.stations, values_fill = 0) 
+muc_ICES2 <-merge(muc_ICES2,muc_biomass.data, by = c("MUC", "Year", "Month"), all =T)
+muc_ICES2[is.na(muc_ICES2)] <- 0
+
+
+datapoints.bloom <- muc_ICES2%>% 
+  group_by(MUC, Year) %>% summarise(month.bloom = n()) %>% 
+  filter(month.bloom >3) %>% mutate(month.bloom=NULL)
+
+datapoints.spring <- muc_ICES2 %>% 
+  filter(Month !=6) %>% 
+  group_by(MUC, Year) %>% summarise(month.bloom = n()) %>% 
+  filter(month.bloom >2) %>% mutate(month.bloom=NULL)
+
+datapoints.spring2 <- muc_ICES2 %>% 
+  filter(Month !=6 | Month !=3 ) %>% 
+  group_by(MUC, Year) %>% summarise(month.bloom = n()) %>% 
+  filter(month.bloom >1) %>% mutate(month.bloom=NULL)
+
+
+```
+```{r}
+data.bloom <-datapoints.bloom %>% left_join(muc_ICES2) %>%
+  pivot_longer(!c(MUC,Year,Month,av.biomass, med.biomass), names_to = "Species", values_to = "ABUNDNR") %>% 
+  group_by(MUC, Year, Species) %>% 
+  summarise(total.ABUNDNR = sum(ABUNDNR), tot.biomass =sum(av.biomass)) %>%
+  mutate(Year = as.numeric(Year)) %>%
+  mutate(Interest = gsub("Scripp.*", "Apocalathium", Species, ignore.case = T), 
+         Interest = sub("Peridi.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Apocal.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Skele.*", "Skeletonema", Interest, ignore.case = T))
+write.csv(data.bloom, file=file.path(output_path, "Biomonitoring_MUCs_march-to-june__JR.csv"), row.names = F)
+
+data.spring <-datapoints.spring %>% left_join(muc_ICES2) %>%
+  pivot_longer(!c(MUC,Year,Month,av.biomass, med.biomass), names_to = "Species", values_to = "ABUNDNR") %>% 
+  group_by(MUC, Year, Species) %>% 
+  summarise(total.ABUNDNR = sum(ABUNDNR), tot.biomass =sum(av.biomass)) %>%
+  mutate(Year = as.numeric(Year)) %>%
+  mutate(Interest = gsub("Scripp.*", "Apocalathium", Species, ignore.case = T), 
+         Interest = sub("Peridi.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Apocal.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Skele.*", "Skeletonema", Interest, ignore.case = T))
+write.csv(data.spring, file=file.path(output_path, "Biomonitoring_MUCs_march-to-may__JR.csv"), row.names = F)
+
+data.aprilmay <-datapoints.spring2 %>% left_join(muc_ICES2) %>%
+  pivot_longer(!c(MUC,Year,Month,av.biomass, med.biomass), names_to = "Species", values_to = "ABUNDNR") %>% 
+  group_by(MUC, Year, Species) %>% 
+  summarise(total.ABUNDNR = sum(ABUNDNR), tot.biomass =sum(av.biomass)) %>%
+  mutate(Year = as.numeric(Year)) %>%
+  mutate(Interest = gsub("Scripp.*", "Apocalathium", Species, ignore.case = T), 
+         Interest = sub("Peridi.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Apocal.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Skele.*", "Skeletonema", Interest, ignore.case = T))
+
+write.csv(data.aprilmay, file=file.path(output_path, "Biomonitoring_MUCs_april-may__JR.csv"), row.names = F)
+```
+
+
+```{r}
+datapoints.bloom %>% left_join(muc_ICES2) %>%
+  pivot_longer(!c(MUC,Year,Month,av.biomass, med.biomass), names_to = "Species", values_to = "ABUNDNR") %>% 
+  group_by(MUC, Year, Species) %>% 
+  summarise(total.ABUNDNR = sum(ABUNDNR)) %>%
+  mutate(Year = as.numeric(Year))%>%
+  mutate(Interest = gsub("Scripp.*", "Apocalathium", Species, ignore.case = T), 
+         Interest = sub("Peridi.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Apocal.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Skele.*", "Skeletonema", Interest, ignore.case = T)) %>%
+  ggplot(aes(x=Year, y=total.ABUNDNR))+geom_line(aes(color= Interest, group =Species)) +facet_grid(MUC~., scales= "free")
+
+datapoints.spring %>% left_join(muc_ICES2) %>%
+  pivot_longer(!c(MUC,Year,Month,av.biomass, med.biomass), names_to = "Species", values_to = "ABUNDNR") %>% 
+  group_by(MUC, Year, Species) %>% 
+  summarise(total.ABUNDNR = sum(ABUNDNR)) %>%
+  mutate(Year = as.numeric(Year))%>%
+  mutate(Interest = gsub("Scripp.*", "Apocalathium", Species, ignore.case = T), 
+         Interest = sub("Peridi.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Apocal.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Skele.*", "Skeletonema", Interest, ignore.case = T)) %>%
+  ggplot(aes(x=Year, y=total.ABUNDNR))+geom_line(aes(color= Interest, group =Species)) +facet_grid(MUC~., scales= "free")
+
+datapoints.spring2 %>% left_join(muc_ICES2) %>%
+  pivot_longer(!c(MUC,Year,Month,av.biomass, med.biomass), names_to = "Species", values_to = "ABUNDNR") %>% 
+  group_by(MUC, Year, Species) %>% 
+  summarise(total.ABUNDNR = sum(ABUNDNR)) %>%
+  mutate(Year = as.numeric(Year))%>%
+  mutate(Interest = gsub("Scripp.*", "Apocalathium", Species, ignore.case = T), 
+         Interest = sub("Peridi.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Apocal.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Skele.*", "Skeletonema", Interest, ignore.case = T)) %>%
+  ggplot(aes(x=Year, y=total.ABUNDNR))+geom_line(aes(color= Interest, group =Species)) +facet_grid(MUC~., scales= "free")
+
+```
+### LATE Bloom 
+
+```{r}
+muc_ices_data_LATE <- muc_ices_data_LATE %>%
+  mutate(Interest = gsub("Scripp.*", "Apocalathium", WoRMS_name, ignore.case = T), 
+         Interest = sub("Peridi.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Apocal.*", "Apocalathium", Interest, ignore.case = T),
+         Interest = sub("Skele.*", "Skeletonema", Interest, ignore.case = T)) %>%
+  filter( Interest =="Skeletonema")
+
+
+ICES_GoF <- muc_ices_data_LATE %>% filter(MUC==MUC_data$short[1])
+
+
+ICES_Landsort <- muc_ices_data_LATE %>% filter(MUC==MUC_data$short[2])
+ICES_EGB <- muc_ices_data_LATE %>% filter(MUC==MUC_data$short[3])
+
+
+unique(ICES_GoF[,c("Year","DATE","Month")]) %>% 
+  group_by(Year,  Month) %>%
+  dplyr::summarise(n=n()) %>%
+  mutate(Month2 =as.character(Month))%>%
+  ggplot(aes(x=Year, y= n, fill=Month2))  + 
+    geom_bar(position="stack", stat="identity")
+    ggtitle("Biomonitoring measurements per year") +
+    theme_hc() + theme(axis.text.x = element_text(angle = 90,hjust=1)) 
+    
+unique(ICES_Landsort[,c("Year","DATE","Month")]) %>% 
+  group_by(Year,  Month) %>%
+  dplyr::summarise(n=n()) %>%
+  mutate(Month2 =as.character(Month))%>%
+  ggplot(aes(x=Year, y= n, fill=Month2))  + 
+    geom_bar(position="stack", stat="identity")
+    ggtitle("Biomonitoring measurements per year") +
+    theme_hc() + theme(axis.text.x = element_text(angle = 90,hjust=1)) 
+
+unique(ICES_EGB[,c("Year","DATE","Month")]) %>% 
+  group_by(Year,  Month) %>%
+  dplyr::summarise(n=n()) %>%
+  mutate(Month2 =as.character(Month))%>%
+  ggplot(aes(x=Year, y= n, fill=Month2))  + 
+    geom_bar(position="stack", stat="identity")
+    ggtitle("Biomonitoring measurements per year") +
+    theme_hc() + theme(axis.text.x = element_text(angle = 90,hjust=1)) 
+```
+```{r}
+ICES_GoF %>% 
+  mutate(date = paste(Year,Month,Day, sep="-"),final_value= as.numeric(final_value))%>%
+  ggplot(aes(x=date, y=final_value, group=WoRMS_name, color=WoRMS_name)) +  
+  ggtitle(unique(ICES_GoF$MUC))  + 
+  geom_point()+ geom_line() + 
+  theme(axis.text.x = element_text(angle = 90,hjust=1)) +
+  facet_wrap(~Year, scales="free_x")
+
+ICES_Landsort %>% 
+  mutate(date = paste(Year,Month,Day, sep="-"),final_value= as.numeric(final_value))%>%
+  ggplot(aes(x=date, y=final_value, group=WoRMS_name, color=WoRMS_name)) +  
+  ggtitle(unique(ICES_Landsort$MUC))  + 
+  geom_point()+ geom_line() + 
+  theme(axis.text.x = element_text(angle = 90,hjust=1)) +
+  facet_wrap(~Year, scales="free_x")
+
+ICES_EGB %>% 
+  mutate(date = paste(Year,Month,Day, sep="-"),final_value= as.numeric(final_value))%>%
+  ggplot(aes(x=date, y=final_value, group=WoRMS_name, color=WoRMS_name)) +  
+  ggtitle(unique(ICES_EGB$MUC))  + 
+  geom_point()+ geom_line() + 
+  theme(axis.text.x = element_text(angle = 90,hjust=1)) +
+  facet_wrap(~Year, scales="free_x")
+```
