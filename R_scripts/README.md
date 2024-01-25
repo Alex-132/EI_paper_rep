@@ -14,19 +14,19 @@ This script is used to perform all analyses run and used in the paper and supple
 
 This script is used to analyze and plot the paleoenvironmental data.
 
-## 4. Metabarcoding Data Cleaning ('Script_Euka02_cleaning.Rmd')
+## 4. Metabarcoding Data Cleaning (`Script_Euka02_cleaning.Rmd`)
 
 This script is used to remove the metabarcoding data set from PCR error, possible contamination and similar.
 
-## 5. Metabarcoding Data Preparation ('Scripts_MUC__metabarcoding.R')
+## 5. Metabarcoding Data Preparation (`Scripts_MUC__metabarcoding.R`)
 
 This script is used to combine the prepare the metabarcoding data for the final data analysis.
 
-## 6. Biomonitoring Data Preparation on Taxon-Level ('Script_MUCs_dia_dino__ICES.Rmd')
+## 6. Biomonitoring Data Preparation on Taxon-Level (`Script_MUCs_dia_dino__ICES.Rmd`)
 
 This script is used to prepare and reduce the ICES monitoring data for the final data analysis on taxon-level (Diatom & Dinoflagellates)
 
-## 6. Biomonitoring Data Preparation on Genus-Level ('Script_MUCs_skele_apo__ICES.Rmd')
+## 6. Biomonitoring Data Preparation on Genus-Level (`Script_MUCs_skele_apo__ICES.Rmd`)
 
 This script is used to prepare and reduce the ICES monitoring data for the final data analysis on genus-level (Apocalathium & Skeletonema)
 
