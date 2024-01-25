@@ -5,6 +5,8 @@ This repository contains scripts and data for replicating the analyses presented
 ## Repository Structure
 
 - `R_scripts`: This directory contains the R scripts used to perform the analyses.
+- `Bash_scripts`: This directory contains the Bash scripts used to perform the analyses.
+
 
 ## Data
 
