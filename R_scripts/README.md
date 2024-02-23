@@ -6,9 +6,9 @@ This repository contains several R scripts and data used for the data preparatio
 
 This script is used to prepare the data and combine everything into one matrix.
 
-## 2. Data Analysis and Visualization (`final_plots.R`)
+## 2. Data Analysis and Visualization (`replicate_consistency.R`,`final_plots.R`)
 
-This script is used to perform all analyses run and used in the paper and supplement.
+This scripts are used to perform all analyses run and used in the paper and supplement.
 
 ## 3. Paleoenvironmental Data Analysis (`env_data_publ.R`)
 
