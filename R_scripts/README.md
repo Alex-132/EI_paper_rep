@@ -20,7 +20,7 @@ This script is used to remove the metabarcoding data set from PCR error, possibl
 
 ## 5. Metabarcoding Data Preparation (`Scripts_MUC__metabarcoding.R`)
 
-This script is used to combine the prepare the metabarcoding data for the final data analysis.
+This script is used to prepare the metabarcoding data for the final data analysis.
 
 ## 6. Biomonitoring Data Preparation on Taxon-Level (`Script_MUCs_dia_dino__ICES.Rmd`)
 
